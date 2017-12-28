@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"compress/gzip"
+	"io/ioutil"
+	"bytes"
 )
 
 type gzipResponseWriter struct {
@@ -23,6 +25,22 @@ func (w gzipResponseWriter) Write(b []byte) (int, error) {
 // TODO: handle gzip request
 func GZipHandler(next http.HandlerFunc) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("Content-Encoding"), "gzip") {
+			// 请求体为压缩过的
+
+			data, err := ioutil.ReadAll(r.Body)
+			if err == nil {
+				// 解压请求体
+				gzr, err := gzip.NewReader(bytes.NewBuffer(data))
+				if err != nil {
+					// 解压失败使用原始的
+					r.Body = ioutil.NopCloser(bytes.NewBuffer(data))
+				} else {
+					data, err := ioutil.ReadAll(gzr)
+					r.Body = ioutil.NopCloser(bytes.NewBuffer(data))
+				}
+			}
+		}
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			next(w, r)
 			return
