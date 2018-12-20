@@ -1,12 +1,13 @@
 package listenerutil
 
 import (
+	"bytes"
+	"compress/gzip"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
-	"compress/gzip"
-	"io/ioutil"
-	"bytes"
 )
 
 type gzipResponseWriter struct {
@@ -37,7 +38,11 @@ func GZipHandler(next http.HandlerFunc) http.HandlerFunc {
 					r.Body = ioutil.NopCloser(bytes.NewBuffer(data))
 				} else {
 					data, err := ioutil.ReadAll(gzr)
-					r.Body = ioutil.NopCloser(bytes.NewBuffer(data))
+					if err == nil {
+						r.Body = ioutil.NopCloser(bytes.NewBuffer(data))
+					} else {
+						fmt.Println("GZipHandler: failed to read body:", err)
+					}
 				}
 			}
 		}

@@ -1,10 +1,10 @@
 package listenerutil
 
 import (
-	"net/http"
-	"strconv"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -71,6 +71,7 @@ func doWrapResponse(w http.ResponseWriter, response interface{}, status int, err
 		data, err = json.Marshal(result)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
 			return
 		}
 	}
