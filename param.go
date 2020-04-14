@@ -1,15 +1,13 @@
 package listenerutil
 
 import (
-	"net/http"
-	"io/ioutil"
 	"bytes"
 	"encoding/json"
+	"io/ioutil"
+	"net/http"
 )
 
-/*
-parse json from body
- */
+// ParseBodyParam 按json格式解析请求体body
 func ParseBodyParam(r *http.Request, param interface{}) error {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {

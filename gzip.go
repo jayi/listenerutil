@@ -22,13 +22,14 @@ func (w gzipResponseWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
 
-// GZip adds GZip compression to http.Handler instances
-// TODO: handle gzip request
+// GZipHandler http处理函数，对http.hadlerFunc的封装，处理gzip压缩。
+// 请求体为gzip压缩时，解压请求体。
+// 请求允许接收gzip时，使用gzip压缩响应内容。
 func GZipHandler(next http.HandlerFunc) http.HandlerFunc {
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.Header.Get("Content-Encoding"), "gzip") {
 			// 请求体为压缩过的
-
 			data, err := ioutil.ReadAll(r.Body)
 			if err == nil {
 				// 解压请求体
