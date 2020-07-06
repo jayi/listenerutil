@@ -1,6 +1,6 @@
 # listenerutil
 --
-    import "dcommon/listenerutil"
+    import "github.com/jayi/listenerutil"
 
 Package listenerutil http 服务处理函数封装。
 
@@ -22,10 +22,9 @@ Package listenerutil http 服务处理函数封装。
     	http.HandleFunc("/test", listenerutil.ExtendHandler(testHandler))
 
     	// 添加hook，打印访问日志
-    	listenerutil.AddEndHook(func(w http.ResponseWriter, r *http.Request, result interface{},
-    			status int, err error, d time.Duration) {
+    	listenerutil.AddEndHandleFunc(func(w http.ResponseWriter, r *http.Request, result *handlerResult) {
 
-    		fmt.Println(r.Method, r.URL, status, d.Seconds(), r.UserAgent())
+    		fmt.Println(r.Method, r.URL, result.StatusCode, result.Cost.Seconds(), r.UserAgent())
     	})
 
     	err := http.ListenAndServe(":8080", nil)
@@ -54,6 +53,13 @@ Package listenerutil http 服务处理函数封装。
 func AddBeginHook(hookFunc http.HandlerFunc)
 ```
 AddBeginHook 添加响应前hook处理方法
+
+#### func  AddEndHandleFunc
+
+```go
+func AddEndHandleFunc(hookFunc EndHandleFunc)
+```
+AddEndHandleFunc 添加响应后hook处理新方法
 
 #### func  AddEndHook
 
@@ -85,6 +91,35 @@ func ParseBodyParam(r *http.Request, param interface{}) error
 ```
 ParseBodyParam 按json格式解析请求体body
 
+#### func  SetCodeFieldName
+
+```go
+func SetCodeFieldName(name string) error
+```
+SetCodeFieldName 设置响应码字段key名
+
+#### func  SetDataFieldName
+
+```go
+func SetDataFieldName(name string) error
+```
+SetDataFieldName 设置响应数据字段key名
+
+#### func  SetMsgFieldName
+
+```go
+func SetMsgFieldName(name string) error
+```
+SetMsgFieldName 设备响应错误信息key名
+
+#### type EndHandleFunc
+
+```go
+type EndHandleFunc func(w http.ResponseWriter, r *http.Request, result *HandleResult)
+```
+
+EndHandleFunc 新版响应后处理方法。 result : 响应结果，包含响应数据，状态码，错误信息，响应处理时间等
+
 #### type EndHookFunc
 
 ```go
@@ -92,3 +127,16 @@ type EndHookFunc func(w http.ResponseWriter, r *http.Request, result interface{}
 ```
 
 EndHookFunc 响应后处理方法。 result : 响应结果; status : 响应状态码; err : 错误信息; d : 响应处理时间;
+
+#### type HandleResult
+
+```go
+type HandleResult struct {
+	Data       interface{}
+	StatusCode int
+	Err        error
+	Cost       time.Duration
+}
+```
+
+HandleResult 响应结果相关信息

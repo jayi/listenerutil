@@ -12,16 +12,15 @@ Package listenerutil http 服务处理函数封装。
 * 响应前后hook支持，可用于记录访问日志、响应时间等。
 
 示例：
-	import "dcommon/listenerutil"
+	import "github.com/jayi/listenerutil"
 
 	func main() {
 		http.HandleFunc("/test", listenerutil.ExtendHandler(testHandler))
 
 		// 添加hook，打印访问日志
-		listenerutil.AddEndHook(func(w http.ResponseWriter, r *http.Request, result interface{},
-				status int, err error, d time.Duration) {
+		listenerutil.AddEndHandleFunc(func(w http.ResponseWriter, r *http.Request, result *handlerResult) {
 
-			fmt.Println(r.Method, r.URL, status, d.Seconds(), r.UserAgent())
+			fmt.Println(r.Method, r.URL, result.StatusCode, result.Cost.Seconds(), r.UserAgent())
 		})
 
 		err := http.ListenAndServe(":8080", nil)
@@ -54,9 +53,20 @@ import (
 	"time"
 )
 
-type hookManager struct {
-	beginHooks []http.HandlerFunc
-	endHooks   []EndHookFunc
+type handlerManager struct {
+	beginHooks    []http.HandlerFunc
+	endHooks      []EndHandleFunc
+	dataFieldName string
+	codeFieldName string
+	msgFieldName  string
+}
+
+// HandleResult 响应结果相关信息
+type HandleResult struct {
+	Data       interface{}
+	StatusCode int
+	Err        error
+	Cost       time.Duration
 }
 
 // EndHookFunc 响应后处理方法。
@@ -66,41 +76,112 @@ type hookManager struct {
 // d      : 响应处理时间;
 type EndHookFunc func(w http.ResponseWriter, r *http.Request, result interface{}, status int, err error, d time.Duration)
 
-var hookMgr = &hookManager{
-	beginHooks: make([]http.HandlerFunc, 0),
-	endHooks:   make([]EndHookFunc, 0),
+// EndHandleFunc 新版响应后处理方法。
+// result : 响应结果，包含响应数据，状态码，错误信息，响应处理时间等
+type EndHandleFunc func(w http.ResponseWriter, r *http.Request, result *HandleResult)
+
+const (
+	defaultDataFieldName = "data"
+	defaultCodeFieldName = "errno"
+	defaultMsgFieldName  = "errmsg"
+)
+
+var handlerMgr = &handlerManager{
+	beginHooks:    make([]http.HandlerFunc, 0),
+	endHooks:      make([]EndHandleFunc, 0),
+	dataFieldName: defaultDataFieldName,
+	codeFieldName: defaultCodeFieldName,
+	msgFieldName:  defaultMsgFieldName,
 }
 
-func (hookMgr *hookManager) addBeginHook(hookFunc http.HandlerFunc) {
-	hookMgr.beginHooks = append(hookMgr.beginHooks, hookFunc)
+func (handlerMgr *handlerManager) addBeginHook(hookFunc http.HandlerFunc) {
+	handlerMgr.beginHooks = append(handlerMgr.beginHooks, hookFunc)
 }
 
-func (hookMgr *hookManager) addEndHook(hookFunc EndHookFunc) {
-	hookMgr.endHooks = append(hookMgr.endHooks, hookFunc)
+func (handlerMgr *handlerManager) addEndHook(hookFunc EndHookFunc) {
+	handlerMgr.endHooks = append(handlerMgr.endHooks, func(w http.ResponseWriter, r *http.Request, result *HandleResult) {
+		hookFunc(w, r, result.Data, result.StatusCode, result.Err, result.Cost)
+	})
+}
+
+func (handlerMgr *handlerManager) addEndHandleFunc(hookFunc EndHandleFunc) {
+	handlerMgr.endHooks = append(handlerMgr.endHooks, hookFunc)
+}
+
+func (handlerMgr *handlerManager) setDataFieldName(name string) error {
+	if len(name) == 0 {
+		return errors.New("invalid field name: " + name)
+	}
+	if name == handlerMgr.codeFieldName || name == handlerMgr.msgFieldName {
+		return errors.New("duplicate filed name: " + name)
+	}
+	handlerMgr.dataFieldName = name
+	return nil
+}
+
+func (handlerMgr *handlerManager) setCodeFieldName(name string) error {
+	if len(name) == 0 {
+		return errors.New("invalid field name: " + name)
+	}
+	if name == handlerMgr.dataFieldName || name == handlerMgr.msgFieldName {
+		return errors.New("duplicate filed name: " + name)
+	}
+	handlerMgr.codeFieldName = name
+	return nil
+}
+
+func (handlerMgr *handlerManager) setMsgFieldName(name string) error {
+	if len(name) == 0 {
+		return errors.New("invalid field name: " + name)
+	}
+	if name == handlerMgr.dataFieldName || name == handlerMgr.codeFieldName {
+		return errors.New("duplicate filed name: " + name)
+	}
+	handlerMgr.msgFieldName = name
+	return nil
 }
 
 // AddBeginHook 添加响应前hook处理方法
 func AddBeginHook(hookFunc http.HandlerFunc) {
-	hookMgr.addBeginHook(hookFunc)
+	handlerMgr.addBeginHook(hookFunc)
 }
 
 // AddEndHook 添加响应后hook处理方法
 func AddEndHook(hookFunc EndHookFunc) {
-	hookMgr.addEndHook(hookFunc)
+	handlerMgr.addEndHook(hookFunc)
 }
 
-func (hookMgr *hookManager) doBeginHooks(w http.ResponseWriter, r *http.Request) {
+// AddEndHandleFunc 添加响应后hook处理新方法
+func AddEndHandleFunc(hookFunc EndHandleFunc) {
+	handlerMgr.addEndHandleFunc(hookFunc)
+}
 
-	for _, hook := range hookMgr.beginHooks {
+// SetDataFieldName 设置响应数据字段key名
+func SetDataFieldName(name string) error {
+	return handlerMgr.setDataFieldName(name)
+}
+
+// SetCodeFieldName 设置响应码字段key名
+func SetCodeFieldName(name string) error {
+	return handlerMgr.setCodeFieldName(name)
+}
+
+// SetMsgFieldName 设备响应错误信息key名
+func SetMsgFieldName(name string) error {
+	return handlerMgr.setMsgFieldName(name)
+}
+
+func (handlerMgr *handlerManager) doBeginHooks(w http.ResponseWriter, r *http.Request) {
+
+	for _, hook := range handlerMgr.beginHooks {
 		hook(w, r)
 	}
 }
 
-func (hookMgr *hookManager) doEndHooks(w http.ResponseWriter, r *http.Request, result interface{},
-	status int, err error, d time.Duration) {
+func (handlerMgr *handlerManager) doEndHooks(w http.ResponseWriter, r *http.Request, result *HandleResult) {
 
-	for _, hook := range hookMgr.endHooks {
-		hook(w, r, result, status, err, d)
+	for _, hook := range handlerMgr.endHooks {
+		hook(w, r, result)
 	}
 }
 
@@ -117,11 +198,11 @@ func doWrapResponse(w http.ResponseWriter, response interface{}, status int, err
 			if err == nil {
 				err = errors.New(http.StatusText(status))
 			}
-			result["errno"] = status
-			result["errmsg"] = err.Error()
+			result[handlerMgr.codeFieldName] = status
+			result[handlerMgr.msgFieldName] = err.Error()
 		} else {
-			result["data"] = response
-			result["errno"] = 0
+			result[handlerMgr.dataFieldName] = response
+			result[handlerMgr.codeFieldName] = 0
 		}
 
 		var err error
@@ -149,9 +230,15 @@ func doWrapResponse(w http.ResponseWriter, response interface{}, status int, err
 func ExtendHandler(handler func(*http.Request) (interface{}, int, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		beginTime := time.Now()
-		hookMgr.doBeginHooks(w, r)
-		result, status, err := handler(r)
-		doWrapResponse(w, result, status, err)
-		hookMgr.doEndHooks(w, r, result, status, err, time.Now().Sub(beginTime))
+		handlerMgr.doBeginHooks(w, r)
+		data, status, err := handler(r)
+		doWrapResponse(w, data, status, err)
+		handleResult := &HandleResult{
+			Data:       data,
+			StatusCode: status,
+			Err:        err,
+			Cost:       time.Now().Sub(beginTime),
+		}
+		handlerMgr.doEndHooks(w, r, handleResult)
 	}
 }

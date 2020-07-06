@@ -13,7 +13,7 @@ func ParseBodyParam(r *http.Request, param interface{}) error {
 	if err != nil {
 		return err
 	}
-	// Reset resp.Body so it can be use again
+	// Reset resp.body so it can be use again
 	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
 
 	err = json.Unmarshal(body, param)
