@@ -50,15 +50,17 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type handlerManager struct {
-	beginHooks    []http.HandlerFunc
-	endHooks      []EndHandleFunc
-	dataFieldName string
-	codeFieldName string
-	msgFieldName  string
+	beginHooks       []http.HandlerFunc
+	endHooks         []EndHandleFunc
+	dataFieldName    string
+	codeFieldName    string
+	msgFieldName     string
+	allowCrossOrigin bool
 }
 
 // HandleResult 响应结果相关信息
@@ -87,11 +89,12 @@ const (
 )
 
 var handlerMgr = &handlerManager{
-	beginHooks:    make([]http.HandlerFunc, 0),
-	endHooks:      make([]EndHandleFunc, 0),
-	dataFieldName: defaultDataFieldName,
-	codeFieldName: defaultCodeFieldName,
-	msgFieldName:  defaultMsgFieldName,
+	beginHooks:       make([]http.HandlerFunc, 0),
+	endHooks:         make([]EndHandleFunc, 0),
+	dataFieldName:    defaultDataFieldName,
+	codeFieldName:    defaultCodeFieldName,
+	msgFieldName:     defaultMsgFieldName,
+	allowCrossOrigin: true,
 }
 
 func (handlerMgr *handlerManager) addBeginHook(hookFunc http.HandlerFunc) {
@@ -141,6 +144,24 @@ func (handlerMgr *handlerManager) setMsgFieldName(name string) error {
 	return nil
 }
 
+func (handlerMgr *handlerManager) setAllowCrossOrigin(allow bool) {
+	handlerMgr.allowCrossOrigin = allow
+}
+
+func (handlerMgr *handlerManager) doBeginHooks(w http.ResponseWriter, r *http.Request) {
+
+	for _, hook := range handlerMgr.beginHooks {
+		hook(w, r)
+	}
+}
+
+func (handlerMgr *handlerManager) doEndHooks(w http.ResponseWriter, r *http.Request, result *HandleResult) {
+
+	for _, hook := range handlerMgr.endHooks {
+		hook(w, r, result)
+	}
+}
+
 // AddBeginHook 添加响应前hook处理方法
 func AddBeginHook(hookFunc http.HandlerFunc) {
 	handlerMgr.addBeginHook(hookFunc)
@@ -166,27 +187,48 @@ func SetCodeFieldName(name string) error {
 	return handlerMgr.setCodeFieldName(name)
 }
 
-// SetMsgFieldName 设备响应错误信息key名
+// SetMsgFieldName 设置响应错误信息key名
 func SetMsgFieldName(name string) error {
 	return handlerMgr.setMsgFieldName(name)
 }
 
-func (handlerMgr *handlerManager) doBeginHooks(w http.ResponseWriter, r *http.Request) {
+// SetAllowCrossOrigin 设置是否允许跨域
+func SetAllowCrossOrigin(allow bool) {
+	handlerMgr.setAllowCrossOrigin(allow)
+}
 
-	for _, hook := range handlerMgr.beginHooks {
-		hook(w, r)
+const (
+	credentialsTrue               = "true"
+	defaultOriginValue            = "*"
+	originRequestHeader           = "Origin"
+	accessControlRequestHeaders   = "Access-Control-Request-Headers"
+	accessControlRequestMethod    = "Access-Control-Request-Method"
+	accessControlAllowOrigin      = "Access-Control-Allow-Origin"
+	accessControlAllowCredentials = "Access-Control-Allow-Credentials"
+	accessControlAllowHeaders     = "Access-Control-Allow-Headers"
+	accessControlAllowMethods     = "Access-Control-Allow-Methods"
+)
+
+//处理跨域
+func doAccessOrigin(w http.ResponseWriter, r *http.Request) {
+
+	origin := r.Header.Get(originRequestHeader)
+
+	if len(strings.TrimSpace(origin)) <= 0 {
+		origin = defaultOriginValue
+	}
+
+	w.Header().Set(accessControlAllowOrigin, origin)
+	w.Header().Set(accessControlAllowCredentials, credentialsTrue)
+
+	if r.Method == http.MethodOptions {
+		w.Header().Set(accessControlAllowMethods, r.Header.Get(accessControlRequestMethod))
+		w.Header().Set(accessControlAllowHeaders, r.Header.Get(accessControlRequestHeaders))
 	}
 }
 
-func (handlerMgr *handlerManager) doEndHooks(w http.ResponseWriter, r *http.Request, result *HandleResult) {
-
-	for _, hook := range handlerMgr.endHooks {
-		hook(w, r, result)
-	}
-}
-
-func doWrapResponse(w http.ResponseWriter, response interface{}, status int, err error) {
-
+// WrapResponse 将interface{}转为json写入http.ResponseWriter
+func WrapResponse(w http.ResponseWriter, response interface{}, status int, err error) {
 	data, ok := response.([]byte)
 	if !ok {
 		result := make(map[string]interface{}, 1)
@@ -213,10 +255,7 @@ func doWrapResponse(w http.ResponseWriter, response interface{}, status int, err
 			return
 		}
 	}
-
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "*")
 	if _, isGzip := w.(gzipResponseWriter); !isGzip {
 		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	}
@@ -224,15 +263,22 @@ func doWrapResponse(w http.ResponseWriter, response interface{}, status int, err
 	w.Write(data)
 }
 
-// ExtendHandler http处理函数，对http.hadlerFunc的封装。
+// ExtendHandler http处理函数，对http.handlerFunc的封装。
 // 将interface{}解析为json，填到body并响应。
 // 自动添加http头。
 func ExtendHandler(handler func(*http.Request) (interface{}, int, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		beginTime := time.Now()
 		handlerMgr.doBeginHooks(w, r)
+		if handlerMgr.allowCrossOrigin {
+			doAccessOrigin(w, r)
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		data, status, err := handler(r)
-		doWrapResponse(w, data, status, err)
+		WrapResponse(w, data, status, err)
 		handleResult := &HandleResult{
 			Data:       data,
 			StatusCode: status,

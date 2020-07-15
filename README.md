@@ -16,7 +16,7 @@ Package listenerutil http 服务处理函数封装。
 
 示例：
 
-    import "dcommon/listenerutil"
+    import "github.com/jayi/listenerutil"
 
     func main() {
     	http.HandleFunc("/test", listenerutil.ExtendHandler(testHandler))
@@ -91,6 +91,13 @@ func ParseBodyParam(r *http.Request, param interface{}) error
 ```
 ParseBodyParam 按json格式解析请求体body
 
+#### func  SetAllowCrossOrigin
+
+```go
+func SetAllowCrossOrigin(allow bool)
+```
+SetAllowCrossOrigin 设置是否允许跨域
+
 #### func  SetCodeFieldName
 
 ```go
@@ -110,7 +117,14 @@ SetDataFieldName 设置响应数据字段key名
 ```go
 func SetMsgFieldName(name string) error
 ```
-SetMsgFieldName 设备响应错误信息key名
+SetMsgFieldName 设置响应错误信息key名
+
+#### func  WrapResponse
+
+```go
+func WrapResponse(w http.ResponseWriter, response interface{}, status int, err error)
+```
+WrapResponse 将interface{}转为json写入http.ResponseWriter
 
 #### type EndHandleFunc
 
